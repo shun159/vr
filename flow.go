@@ -6,11 +6,12 @@ import (
 	"reflect"
 	"strconv"
 	"syscall"
+    "github.com/shun159/vr/vr"
 )
 
 // Flow Base struct
 type Flow struct {
-	*VrFlowReq
+	*vr.VrFlowReq
 }
 
 // Flow spec
@@ -53,8 +54,8 @@ type flowSpec struct {
 
 func NewFlow(flowspec *flowSpec) (*Flow, error) {
 	flow := &Flow{}
-	flow.VrFlowReq = NewVrFlowReq()
-	flow.FrOp = FlowOp_FLOW_SET
+	flow.VrFlowReq = vr.NewVrFlowReq()
+    flow.FrOp = vr.FlowOp_FLOW_SET
 	flow.FrRid = flowspec.rid
 	flow.FrAction = flowspec.action
 	flow.FrFlags = flowspec.flags

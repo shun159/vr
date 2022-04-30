@@ -3,11 +3,12 @@ package vr
 import (
 	"reflect"
 	"strconv"
+    "github.com/shun159/vr/vr"
 )
 
 // nexthop Base struct
 type Nexthop struct {
-	*VrNexthopReq
+	*vr.VrNexthopReq
 }
 
 func NewNextHop(
@@ -20,8 +21,8 @@ func NewNextHop(
 	}
 
 	nh := &Nexthop{}
-	nh.VrNexthopReq = NewVrNexthopReq()
-	nh.HOp = SandeshOp(SANDESH_OPER_ADD)
+	nh.VrNexthopReq = vr.NewVrNexthopReq()
+	nh.HOp = vr.SandeshOp(SANDESH_OPER_ADD)
 	nh.NhrID = nh_id
 	nh.NhrFamily = nh_family
 	nh.NhrType = int8(nh_type)

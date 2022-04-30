@@ -5,22 +5,18 @@ package vr
 import "C"
 
 import (
-	"context"
 	"encoding/binary"
 	"net"
 	"reflect"
 	"strconv"
 	"unsafe"
-
-	"github.com/apache/thrift/lib/go/thrift"
+    "fmt"
+    "github.com/shun159/vr/vr"
 )
 
 // Virtual Interface Base struct
 type Vif struct {
-	*VrInterfaceReq
-	*thrift.TMemoryBuffer
-	*TSandeshProtocol
-	context.Context
+	*vr.VrInterfaceReq
 }
 
 // Create virtual interface base struct
@@ -36,20 +32,28 @@ func NewVif(oper, idx, viftype int32, name, ipaddr, macaddr string, transport in
 	}
 
 	vif := &Vif{}
-	vif.VrInterfaceReq = &VrInterfaceReq{}
-	vif.VrInterfaceReq.HOp = SandeshOp(oper)
-	vif.VrInterfaceReq.VifrIdx = idx
-	vif.VrInterfaceReq.VifrType = viftype
-	vif.VrInterfaceReq.VifrName = name
-	vif.VrInterfaceReq.VifrTransport = transport
-	vif.VrInterfaceReq.VifrIP = ipAddrToInt32(net.ParseIP(ipaddr))
-	vif.VrInterfaceReq.VifrMac = hwaddr_thrift
-	vif.VrInterfaceReq.VifrOsIdx = ifNameToIndex(name)
-	vif.TMemoryBuffer = thrift.NewTMemoryBuffer()
-	vif.TSandeshProtocol = NewTSandeshProtocolTransport(vif.TMemoryBuffer)
-	vif.Context = context.Background()
+	vif.VrInterfaceReq = vr.NewVrInterfaceReq()
+	vif.HOp = vr.SandeshOp(oper)
+	vif.VifrIdx = idx
+	vif.VifrType = viftype
+	vif.VifrName = name
+	vif.VifrTransport = transport
+	vif.VifrIP = ipAddrToInt32(net.ParseIP(ipaddr))
+	vif.VifrMac = hwaddr_thrift
+	vif.VifrOsIdx = ifNameToIndex(name)
 
 	return vif, nil
+}
+
+func (vif *Vif) GetIPAddressString() string {
+    return Int32ToipAddr(vif.VifrIP).String()
+}
+
+func (vif *Vif)GetMacAddressString() string {
+    f := "%02x:%02x:%02x:%02x:%02x:%02x"
+    mac := vif.GetVifrMac()
+    s := fmt.Sprintf(f, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
+    return s
 }
 
 // AgentVif config
@@ -118,8 +122,8 @@ type VhostVifConfig struct {
 	// Mandatory Parameters
 	Idx     int32
 	Name    string
-	IpAddr  string
-	MacAddr string
+    IpAddr  string `default:"0.0.0.0"`
+	MacAddr string `default:"00:00:00:00:00:00"`
 	// Optional Parameters
 	NextHop   int32
 	McastVrf  uint32 `default:"65535"`
@@ -135,6 +139,10 @@ func NewVhostVifConfig() *VhostVifConfig {
 	var f reflect.StructField
 	conf := VhostVifConfig{}
 	typ := reflect.TypeOf(VhostVifConfig{})
+
+    f, _ = typ.FieldByName("MacAddr")
+    macaddr := f.Tag.Get("default")
+    conf.MacAddr = macaddr
 
 	f, _ = typ.FieldByName("McastVrf")
 	mcast_vrf, _ := strconv.Atoi(f.Tag.Get("default"))
@@ -190,7 +198,7 @@ type FabricVifConfig struct {
 	// Mandatory Parameters
 	Idx     int32
 	Name    string
-	MacAddr string
+    MacAddr string `default:"00:00:00:00:00:00"`
 	// Optional Parameters
 	IpAddr    string `default:"0.0.0.0"`
 	McastVrf  uint32 `default:"65535"`
@@ -206,7 +214,11 @@ func NewFabricVifConfig() FabricVifConfig {
 	conf := FabricVifConfig{}
 	typ := reflect.TypeOf(FabricVifConfig{})
 
-	f, _ = typ.FieldByName("McastVrf")
+    f, _ = typ.FieldByName("MacAddr")
+    macaddr := f.Tag.Get("default")
+    conf.MacAddr = macaddr
+
+    f, _ = typ.FieldByName("McastVrf")
 	mcast_vrf, _ := strconv.Atoi(f.Tag.Get("default"))
 	conf.McastVrf = uint32(mcast_vrf)
 
@@ -257,7 +269,7 @@ func NewFabricVif(conf FabricVifConfig) (*Vif, error) {
 type VirtualVifConfig struct {
 	// Mandatory Parameters
 	Idx     int32
-	Name    string
+	Name    string 
 	MacAddr string `default:"00:00:00:00:00:00"`
 	IpAddr  string `default:"0.0.0.0"`
 	// Optional Parameters
@@ -270,10 +282,14 @@ type VirtualVifConfig struct {
 }
 
 // Create vhost config with default values
-func NewVirtualVifConfig() VirtualVifConfig {
+func NewVirtualVifConfig() *VirtualVifConfig {
 	var f reflect.StructField
-	conf := VirtualVifConfig{}
+	conf := &VirtualVifConfig{}
 	typ := reflect.TypeOf(VirtualVifConfig{})
+
+    f, _ = typ.FieldByName("MacAddr")
+    macaddr := f.Tag.Get("default")
+    conf.MacAddr = macaddr
 
 	f, _ = typ.FieldByName("McastVrf")
 	mcast_vrf, _ := strconv.Atoi(f.Tag.Get("default"))
@@ -299,7 +315,7 @@ func NewVirtualVifConfig() VirtualVifConfig {
 }
 
 // Create VhostVif
-func NewVirtualVif(conf VirtualVifConfig) (*Vif, error) {
+func NewVirtualVif(conf *VirtualVifConfig) (*Vif, error) {
 	vif, err := NewVif(
 		SANDESH_OPER_ADD,
 		conf.Idx,
@@ -322,16 +338,6 @@ func NewVirtualVif(conf VirtualVifConfig) (*Vif, error) {
 	return vif, nil
 }
 
-// Serialize Vif struct into Sandesh format binary
-func (vif *Vif) ToBinary(ctx context.Context, proto *TSandeshProtocol) ([]byte, error) {
-	s_req := vif.VrInterfaceReq
-	if err := s_req.Write(ctx, proto); err != nil {
-		return []byte{}, err
-	} else {
-		return vif.TMemoryBuffer.Bytes(), nil
-	}
-}
-
 // Helper functions
 
 func ifNamesToIndexes(names []string) []int32 {
@@ -349,7 +355,7 @@ func ifNamesToIndexes(names []string) []int32 {
 }
 
 func ifNameToIndex(name string) int32 {
-	c_name := C.CString(name)
+    c_name := C.CString(name)
 	ifindex := C.if_nametoindex(c_name)
 	defer C.free(unsafe.Pointer(c_name))
 	if ifidx := int32(ifindex); ifidx > 0 {
@@ -363,4 +369,10 @@ func ipAddrToInt32(ip net.IP) int32 {
 		return int32(binary.LittleEndian.Uint32(ip[12:16]))
 	}
 	return int32(binary.LittleEndian.Uint32(ip))
+}
+
+func Int32ToipAddr(i int32) net.IP {
+    ip := make(net.IP, 4)
+    binary.BigEndian.PutUint32(ip, uint32(i))
+    return ip
 }

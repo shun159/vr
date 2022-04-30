@@ -1,15 +1,18 @@
 package vr
 
 import (
+	"fmt"
 	"net"
 	"reflect"
 	"strconv"
 	"syscall"
+
+	"github.com/shun159/vr/vr"
 )
 
 // Route Base struct
 type Route struct {
-	*VrRouteReq
+	*vr.VrRouteReq
 }
 
 // Create Route interface base object
@@ -19,7 +22,7 @@ func NewRoute(
 	rtr_label int32,
 ) (*Route, error) {
 	hwaddr := make([]byte, ETH_ALEN)
-	prefix_thrift := make([]int8, pref_len/8)
+	prefix_thrift := make([]int8, 16)
 
 	if macaddr, err := net.ParseMAC(mac); err == nil {
 		hwaddr = macaddr
@@ -34,8 +37,8 @@ func NewRoute(
 	}
 
 	route := &Route{}
-	route.VrRouteReq = NewVrRouteReq()
-	route.HOp = SandeshOp(oper)
+    route.VrRouteReq = vr.NewVrRouteReq()
+	route.HOp = vr.SandeshOp(oper)
 	route.RtrFamily = family
 	route.RtrVrfID = vrf
 	route.RtrMac = hwaddr_thrift
@@ -47,12 +50,30 @@ func NewRoute(
 	return route, nil
 }
 
+func (r *Route)GetPrefixString() string {
+    prefix := make([]byte, 16)
+    for idx, n := range r.GetRtrPrefix() {
+        prefix[idx] = byte(n)
+    }
+    ip6 := (net.IP)(prefix).String()
+    return ip6
+}
+
+func (r *Route)GetMacAddressString() string {
+    f := "%02x:%02x:%02x:%02x:%02x:%02x"
+    mac := r.GetRtrMac()
+    s := fmt.Sprintf(f, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
+    return s
+}
+
 // Bridge Route config
 type BridgeRouteConfig struct {
 	// Mandatory Parameters
 	Vrf        int32
 	NhIdx      int32
 	MacAddress string
+    LabelFlag  int16
+    Label      int32
 }
 
 // Bridge Route config with default values
@@ -71,8 +92,8 @@ func NewBridgeRoute(conf *BridgeRouteConfig) (*Route, error) {
 		0,
 		conf.MacAddress,
 		conf.NhIdx,
-		0,
-		0,
+		conf.LabelFlag,
+		conf.Label,
 	)
 	return route, nil
 }
@@ -110,7 +131,7 @@ func NewInetRouteConfig() *InetRouteConfig {
 
 // Create Inet Route
 func NewInetRoute(conf *InetRouteConfig) (*Route, error) {
-	prefix := net.ParseIP(conf.IPAddress).To4()
+	prefix := net.ParseIP(conf.IPAddress).To16()
 	route, _ := NewRoute(
 		SANDESH_OPER_ADD,
 		syscall.AF_INET,
@@ -132,9 +153,6 @@ type Inet6RouteConfig struct {
 	NhIdx      int32
 	IPAddress  string `default:"::"`
 	PrefixLen  int32  `default:"128"`
-	MacAddress string
-	LabelFlag  int16
-	Label      int32
 }
 
 // Bridge Route config with default values
@@ -162,10 +180,10 @@ func NewInet6Route(conf *Inet6RouteConfig) (*Route, error) {
 		conf.Vrf,
 		prefix,
 		conf.PrefixLen,
-		conf.MacAddress,
+        "00:00:00:00:00:00",
 		conf.NhIdx,
-		conf.LabelFlag,
-		conf.Label,
+		0,
+		0,
 	)
 	return route, nil
 }
